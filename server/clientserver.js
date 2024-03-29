@@ -98,7 +98,7 @@ async function execute(payload) {
 		// }
 		// // Set status as completed if processed already
 		// orderItem.status = payload.status ?? orderItem.status;
-		orderbook.push(orderItem);
+		//orderbook.push(orderItem);
 		console.log(orderbook);
 		res(payload);
 	});
@@ -108,8 +108,18 @@ function getClientOrders(clientId) {
 	return orderbook.filter(o => o.clientId === clientId);
 }
 
+function isSelf() {
+	// Implement to check the clientId
+	// matching this peer, return true in that scenario
+	return payload.clientId === clientId;
+}
+
 service.on('request', async (rid, key, payload, handler) => {
 	// execute
+	if (isSelf(payload.clientId)) {
+		return;
+	}
+
 	let response = undefined;
 	switch (payload.action) {
 		case 'refresh': response = getClientOrders(payload.clientId); break;
@@ -120,3 +130,83 @@ service.on('request', async (rid, key, payload, handler) => {
   	console.log(`Response: ${response}`) //  { msg: 'hello' }
   	handler.reply(null, response)
 });
+
+// This client will as the DHT for a service called `rpc_test`
+// and then establishes a P2P connection it.
+// It will then send { msg: 'hello' } to the RPC server
+
+'use strict'
+
+const { PeerRPCClient }  = require('grenache-nodejs-http')
+const Link = require('grenache-nodejs-link');
+const readline = require('node:readline/promises');
+const { stdin: input, stdout: output } = require('node:process');
+
+const rl = readline.createInterface({ input, output });
+
+const peerClient = new PeerRPCClient(link, {})
+peerClient.init()
+
+let clientId = '';
+
+function submitNewOrder(itemId, quantity, type) {
+	if (quantity < 1) {
+		console.error('Quantity should be at least 1');
+		return;
+	}
+	
+	peerClient.request('rpc_test', { data : {itemId, quantity, type, clientId }, action: 'order' }, { timeout: 10000 }, (err, data) => {
+		if (err) {
+			console.error(err)
+			process.exit(-1)
+		}
+		console.log(data);
+		const idx = orderbook.findIndex(o => o.itemId === itemId);
+		if (idx !== -1) {
+			orderbook[idx] = data;
+		} else {
+			orderbook.push(data);
+		}
+    });
+
+}
+
+function refreshOrderBook() {
+	peerClient.request('rpc_test', { action: 'refresh' }, { timeout: 10000 }, (err, data) => {
+		if (err) {
+			console.error(err)
+			process.exit(-1)
+		}
+		console.log(data);
+		orderbook = data;
+    });
+
+}
+
+function executeOrder(action) {
+	if (action === 'quit') {
+		return;
+	}
+
+	const [ type, itemId, quantity ] = action.split(' ');
+	switch(type) {
+		case 'sell':
+		case 'buy': submitNewOrder(itemId, parseInt(quantity), type); break;
+		case 'print': console.log(orderbook); break;
+		//case 'refresh': refreshOrderBook(); break;
+		case 'quit': process.exit(0);
+		default: console.log('Did not recognize that');
+	}
+}
+
+async function main() {
+	let action = '';
+	clientId =  await rl.question('clientId : ');
+	while (action != 'quit') {
+		action = await rl.question('Press the buy/sell as order or quit: order itemid itemcount > ');
+		executeOrder(action);
+	}
+}
+
+main();
+

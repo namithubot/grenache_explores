@@ -1,14 +1,18 @@
 const crypto = require('crypto');
 ordersUtils = {
-  createNewOrder: (itemId, quantity, type, cliedId) => {
+  createNewOrder: (itemId, quantity, type, clientId) => {
+	const timeStamp = Date.now();
     return {
-      timeStamp: Date.now(),
+      timeStamp,
 	  orderId: crypto.randomUUID(),
       quantity,
       itemId,
       type,
       status: 0,
-      cliedId,
+      clientId,
+	  transactions: [
+		{ clientId, quantity, timeStamp }
+	  ]
     };
   },
 };
